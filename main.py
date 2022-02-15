@@ -65,19 +65,16 @@ class User:
             try:
                 resp = self.session.request(method, url, **kwargs)
                 resp.raise_for_status()
-            except httpx.TimeoutException:
-                self.logger.warning("%s requests timeout", url)
+            except httpx.TimeoutException as e:
+                self.logger.warning("%s timeout", e.request.url)
                 self.changeproxy()
                 time.sleep(settings.low_time)
             except httpx.ProxyError as e:
-                self.logger.warning("%s proxy error (%s)", url, e)
+                self.logger.warning("%s proxy error (%s)", e.request.url, str(e))
                 self.changeproxy()
                 time.sleep(settings.low_time)
-            except urllib3.exceptions.SSLError as e:
-                self.logger.warning("%s SSLError (timeout?): %s", url, str(e))
-                time.sleep(settings.low_time)
-            except httpx.ConnectError as e:
-                self.logger.warning("%s ConnectionError %s", url, str(e))
+            except httpx.TransportError as e:
+                self.logger.warning("%s TransportError (%s)", e.request.url, str(e))
                 self.changeproxy()
                 time.sleep(settings.low_time)
             except httpx.HTTPStatusError as e:
@@ -158,19 +155,20 @@ class User:
 
         contestlistsoup = BeautifulSoup(contestListResp.text, "html.parser")
 
-        contestList = contestlistsoup.find("div", class_="discussionListItems")
-        if contestList is None:
-            self.logger.critical("%s", str(contestlistsoup))
-            raise RuntimeError("couldn't find discussionListItems.")
-
         balances = contestlistsoup.select('a[href$=payments] span.balanceValue')
         if len(balances) == 1:
             self.logger.notice("Баланс: %s", balances[0].text)
         elif len(balances) == 2:
             self.logger.notice("Баланс: %s(%s)", balances[0].text, balances[1].text)
- 
-        threadsList = []
         
+        
+        contestList = contestlistsoup.find("div", class_="discussionListItems")
+        if contestList is None:
+            self.logger.critical("%s", str(contestlistsoup))
+            raise RuntimeError("couldn't find discussionListItems.")
+
+        threadsList = []
+
         stickyThreads = contestList.find("div", class_="stickyThreads")
         if stickyThreads:
             threadsList.extend(stickyThreads.findChildren(recursive=False))
